@@ -94,6 +94,16 @@ Output (for training on real data, git-ignored because it names this machine's a
 `collected/os_apps.csv` (per application: connections, connect time). Privacy by design: only process names and aggregate
 numbers are saved; no URLs, no remote IPs, no traffic content.
 
+### Live demo
+
+```
+python demo.py                 # opens the dashboard + 4 websites, downloads a 10 MB test file, prints live readings for ~60 s
+python demo.py --no-browser    # console only
+```
+
+It starts the agent if needed, shows the throughput spike and which applications are online, then flips the switch OFF to
+show that sampling stops, and ON again. The download is from speed.cloudflare.com.
+
 **What it does not do (yet):** it observes and recommends; it does not change other applications' traffic. Optimizing
 traffic system-wide would need a local proxy (HTTPS would need a root certificate) or Windows network settings
 changes with admin rights. Per-application *throughput* is not measured (Windows needs ETW/admin for that); the
