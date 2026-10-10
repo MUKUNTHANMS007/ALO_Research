@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALO Comparison Results</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="comparison.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand brand-link" href="/"><span class="logo">A</span><span>ALO</span></a>
+    <nav aria-label="Main navigation">
+      <a href="/">Dashboard</a>
+      <a class="active" href="/comparison.html">Comparison results</a>
+    </nav>
+    <div class="side-foot"><span class="dot live"></span><span>Local results</span></div>
+  </aside>
+  <main>
+    <header class="topbar">
+      <div>
+        <h1>Extension comparison</h1>
+        <p class="sub">Compare page loads with ALO against the baseline run.</p>
+      </div>
+      <div class="controls">
+        <label class="upload-label" for="csv-file">Open CSV</label>
+        <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
+        <button class="btn" id="refresh">Refresh results</button>
+      </div>
+    </header>
+
+    <p id="message" class="message" role="status">Loading comparison results…</p>
+    <section id="stats" class="stats" aria-label="Comparison summary"></section>
+
+    <section class="card full result-card">
+      <div class="card-head result-head">
+        <div><h2>Per-site results</h2><p id="row-count" class="fine"></p></div>
+        <label class="search-label">Filter sites
+          <input id="search" type="search" placeholder="Search URL…" autocomplete="off">
+        </label>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Website</th><th>Baseline</th><th>With ALO</th><th>Time saved</th><th>Change</th><th>Bytes saved</th>
+          </tr></thead>
+          <tbody id="results"></tbody>
+        </table>
+      </div>
+      <p class="fine footnote">Positive time saved means the ALO run loaded faster. Timings are shown in seconds; byte savings are estimated from response Content-Length headers.</p>
+    </section>
+  </main>
+</div>
+<script src="comparison.js"></script>
+</body>
+</html>
