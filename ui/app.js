@@ -25,13 +25,14 @@ const predictOpts = (profile) => ({
 });
 
 /* ---------------- routing ---------------- */
-const PAGES = ['overview', 'live', 'predictions', 'optimizations', 'history', 'model'];
+const PAGES = ['overview', 'live', 'agent', 'predictions', 'optimizations', 'history', 'model'];
 const loaded = {};
 function route() {
   const page = PAGES.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
   document.querySelectorAll('.page').forEach(s => { s.hidden = s.dataset.page !== page; });
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.page === page));
   if (page === 'live') renderLive();
+  if (page === 'agent') renderAgent();
   if (page === 'history') renderHistoryPage();
   if (page === 'optimizations') loadOptimizations();
   if (page === 'model') loadModel();
@@ -191,6 +192,43 @@ function renderLive() {
   $('battery-line').textContent = s.bat == null ? 'No battery detected (desktop). Battery readings are skipped.'
     : `Battery ${s.bat}% · ${s.plugged ? 'plugged in' : 'on battery'}.`;
 }
+
+
+/* ---------------- OS agent (system-wide telemetry) ---------------- */
+let agentTimer = null;
+async function renderAgent() {
+  clearInterval(agentTimer);
+  agentTimer = setInterval(() => { if (location.hash === '#agent') renderAgent(); else clearInterval(agentTimer); }, 4000);
+  let st, ser;
+  try {
+    st = await (await fetch('/api/agent/status')).json();
+    ser = (await (await fetch('/api/agent/series?n=120')).json()).rows;
+  } catch { $('ag-state').textContent = 'API offline'; return; }
+  const on = st.enabled, last = st.last;
+  $('ag-toggle').checked = on;
+  $('ag-state').textContent = on ? 'ALO is ON' : 'ALO is OFF';
+  $('ag-profile').textContent = last ? (NETS.find(n => n[0] === last.profile) || [0, last.profile])[1] : '--';
+  $('ag-rtt').textContent = last && last.rtt_ms != null ? `latency ${last.rtt_ms.toFixed(0)} ms` : '';
+  $('ag-apps').textContent = last ? last.apps_online : '--';
+  $('ag-conns').textContent = last ? `${last.connections} open connections` : '';
+  $('ag-net').textContent = last ? `${(last.down_kbps / 1000).toFixed(1)} / ${(last.up_kbps / 1000).toFixed(1)} Mbps` : '--';
+  $('ag-samples').textContent = st.samples.toLocaleString();
+  $('ag-up').textContent = `every ${st.interval_s} s, running ${Math.floor(st.uptime_s / 60)} min` + (st.error ? ` - error: ${st.error}` : '');
+  $('ag-rtt-big').textContent = last && last.rtt_ms != null ? last.rtt_ms.toFixed(0) + ' ms' : '--';
+  const rtts = ser.map(r => r.rtt_ms);
+  chartSvg($('ag-c-rtt'), [{ data: rtts.slice(-HISTORY_LEN), color: '#38bdf8' }], 600, 140, Math.max(100, ...rtts.filter(v => v != null)) * 1.2);
+  const r = st.recommendation;
+  $('ag-reco').innerHTML = r ? `On a <b>${esc(r.profile)}</b> connection a typical page takes about <b>${r.expected_load_s.toFixed(1)} s</b>;
+    with ALO's methods (${r.methods.map(esc).join(', ') || 'none'}) about <b class="good">${r.with_alo_s.toFixed(1)} s</b>.`
+    : (on ? 'Waiting for the first sample...' : 'The agent is off, so nothing is being measured.');
+  $('ag-table').innerHTML = st.apps.map(a => `<tr><td>${esc(a.app)}</td><td>${a.connections}</td>
+    <td>${a.connect_ms == null ? '—' : a.connect_ms.toFixed(0) + ' ms'}</td><td>${a.probes}</td></tr>`).join('')
+    || `<tr><td colspan="4" class="fine">${on ? 'No application connections yet.' : 'Agent is off.'}</td></tr>`;
+}
+$('ag-toggle').addEventListener('change', async e => {
+  try { await fetch('/api/agent/toggle', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: e.target.checked }) }); } catch { /* offline */ }
+  renderAgent();
+});
 
 /* ---------------- predictions (what-if) ---------------- */
 const NETS = [['No_Throttle', 'Wired / Wi-Fi (fast)'], ['Fast_4G', 'Fast 4G-like'], ['Slow_3G', 'Slow 3G-like']];

@@ -13,6 +13,7 @@
     <nav id="nav">
       <a href="#overview" data-page="overview">Overview</a>
       <a href="#live" data-page="live">Live System</a>
+      <a href="#agent" data-page="agent">OS Agent</a>
       <a href="#predictions" data-page="predictions">Predictions</a>
       <a href="#optimizations" data-page="optimizations">Optimizations</a>
       <a href="#history" data-page="history">History</a>
@@ -107,6 +108,33 @@
             That profile and the page's size feed the model. CPU, memory and battery are displayed now and are the next inputs to add once the collector records them.</p>
           <p class="fine" id="battery-line"></p>
         </article>
+      </section>
+    </section>
+
+    <!-- ================= OS AGENT ================= -->
+    <section class="page" data-page="agent" hidden>
+      <header class="topbar"><div><h1>OS Agent</h1>
+        <p class="sub">ALO running in the background of this laptop: it watches the network of every application, no browser needed</p></div>
+        <label class="agent-switch"><input type="checkbox" id="ag-toggle"><span id="ag-state" class="chip">--</span></label></header>
+      <section class="stats">
+        <article class="card"><small>Network seen by the OS</small><strong id="ag-profile" class="big">--</strong><p class="fine" id="ag-rtt"></p></article>
+        <article class="card"><small>Apps online now</small><strong id="ag-apps" class="big">--</strong><p class="fine" id="ag-conns"></p></article>
+        <article class="card"><small>Throughput (all apps)</small><strong id="ag-net" class="big">--</strong><p class="fine">download / upload</p></article>
+        <article class="card"><small>Real samples recorded</small><strong id="ag-samples" class="big">--</strong><p class="fine" id="ag-up"></p></article>
+      </section>
+      <section class="grid">
+        <article class="card half"><div class="card-head"><h2>Latency over time</h2><strong id="ag-rtt-big" class="big">--</strong></div>
+          <svg id="ag-c-rtt" class="trend short" viewBox="0 0 600 140" preserveAspectRatio="none"></svg>
+          <p class="fine">Time to open a connection to a public host (system-wide).</p></article>
+        <article class="card half"><div class="card-head"><h2>What ALO expects right now</h2></div>
+          <p class="big-text" id="ag-reco">Waiting for the first sample...</p></article>
+        <article class="card full"><div class="card-head"><h2>Applications using the internet</h2><span class="chip">connect time = real TCP connect to the app's servers</span></div>
+          <div class="table-wrap"><table><thead><tr><th>Application</th><th>Connections</th><th>Connect time</th><th>Probes</th></tr></thead>
+          <tbody id="ag-table"></tbody></table></div></article>
+        <article class="card full"><div class="card-head"><h2>Privacy</h2></div>
+          <p class="fine big-text">Everything stays on this laptop. Only application names and aggregate numbers are saved
+            (<code>collected/os_telemetry.csv</code>, <code>collected/os_apps.csv</code>); no page addresses, no remote IPs, no traffic content.
+            Turning the switch off stops all sampling.</p></article>
       </section>
     </section>
 

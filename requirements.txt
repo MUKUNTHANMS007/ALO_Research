@@ -9,3 +9,5 @@ uvicorn==0.44.0
 pydantic==2.12.5
 psutil==6.0.0
 playwright==1.63.0
+pystray>=0.19
+pillow>=10.4

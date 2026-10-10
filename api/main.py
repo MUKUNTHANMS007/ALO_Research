@@ -250,6 +250,39 @@ def model_info():
             'features': [c for c in cols if not c.startswith('network_profile_')] + ['network profile']}
 
 
+# ---------- OS agent: system-wide telemetry (see agent/telemetry.py) ----------
+from agent.telemetry import Telemetry  # noqa: E402
+
+TELE = Telemetry()
+TELE.start()
+
+
+class ToggleIn(BaseModel):
+    enabled: bool
+
+
+@app.get('/api/agent/status')
+def agent_status():
+    s = TELE.status()
+    last = s['last']
+    if last:  # what ALO would expect for a typical page on the connection the OS is seeing right now
+        p = predict(PredictIn(url='https://typical-page.invalid', profile=last['profile'], min_saving_ms=0))
+        s['recommendation'] = {'profile': PROFILE_LABEL[last['profile']], 'expected_load_s': p['baseline'],
+                               'with_alo_s': p['optimized'], 'methods': [a['name'] for a in p['actions'] if a['applied']]}
+    return s
+
+
+@app.get('/api/agent/series')
+def agent_series(n: int = 120):
+    return {'rows': TELE.series(min(max(n, 1), 720))}
+
+
+@app.post('/api/agent/toggle')
+def agent_toggle(body: ToggleIn):
+    TELE.set_enabled(body.enabled)
+    return {'enabled': TELE.enabled}
+
+
 # ---------- live runs reported by the browser extension ----------
 LIVE_PATH = ROOT / 'collected' / 'live_runs.jsonl'
 LIVE: list[dict] = []

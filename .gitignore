@@ -5,3 +5,6 @@ collected/*_log*.txt
 collected/live_runs.jsonl
 collected/*_output.txt
 network_requests.csv
+collected/os_*.csv
+agent_state.json
+.claude/

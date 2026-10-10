@@ -14,6 +14,7 @@ A dashboard shows predictions next to the load times measured in the browser.
 | Training / evaluation | `train_new.py`, `train_model.py` | `train_new.py` evaluates models on `collected/runs.csv`; `train_model.py` exports the model the API uses. |
 | Legacy training (first dataset) | `clean.py`, `train_tree.py`, `train_v2.py`, `train_all.py`, `new_preprocessed.csv`, `page_runs*.csv` | Original 71-site experiments. `train_all.py` produced `reports/results.json` and the `reports/fig_*.png` figures (old data only). |
 | API + dashboard | `api/main.py`, `ui/` | FastAPI serves predictions at `/api/*` and the dashboard at `/`. |
+| **OS agent** | `agent/telemetry.py`, `agent/tray.py`, `agent/alo_agent.pyw` | Background Windows agent with a tray On/Off switch. Measures the network of **every** application (no browser needed) and feeds the dashboard's *OS Agent* page. See section 4b. |
 | Browser extension | `extension/` | Chrome MV3 extension: applies optimizations to pages you open and reports measured load time to the API. |
 | Reports | `ALO_Training_Report.md` (current), `reports/ALO_Training_Report_v1_71sites.md` (old) | Results and limits. Read `ALO_Training_Report.md` first. |
 | Saved models | `model/alo_tree.joblib` (used by API), `model/url_profiles.json`, `model/alo_extratrees.joblib` (old, not wired in), `model/v1_old/` (first model backup) | |
@@ -67,6 +68,36 @@ Measured loads are appended to `collected/live_runs.jsonl`.
 **The extension has not been tested in a real browser session yet** (only syntax checks and the API calls). Expect to debug it.
 Known limits: Chrome's preload scanner may fetch images/scripts from raw HTML before the extension can change them, so
 savings are partial; the extension measures only the optimized load, so "actual vs predicted" is not an A/B test.
+
+## 4b. OS agent (system-wide, runs in the background)
+
+ALO as a background service of the laptop instead of an app the user opens. It lives in the system tray
+(`ALO enabled` switch, `Open dashboard`, `Start with Windows`, `Quit`). While enabled it samples every 5 s:
+
+- system CPU/RAM, download/upload rate, round-trip time to a public host, and the network profile that implies;
+- which applications hold open internet connections (from `psutil`, no admin needed) and the **real TCP connect time**
+  to each application's servers (probed every 15 s, at most 12 probes).
+
+```
+pip install -r requirements.txt            # includes pystray + pillow
+pythonw agentlo_agent.pyw                 # no console window; errors go to collected/agent_log.txt
+python -m agent.tray                       # same, with a console (for debugging)
+```
+
+The agent starts the API/dashboard on port 8000 if nothing is serving there, so do not start uvicorn separately
+(the API process hosts the sampler, `Telemetry` in `agent/telemetry.py`). Open http://localhost:8000/#agent (or the tray
+icon) for the *OS Agent* page. The switch there and the tray switch are the same setting (`agent_state.json`);
+OFF means nothing is sampled at all. Endpoints: `GET /api/agent/status`, `GET /api/agent/series`, `POST /api/agent/toggle`.
+
+Output (for training on real data, git-ignored because it names this machine's applications):
+`collected/os_telemetry.csv` (one row per sample: profile, RTT, CPU, RAM, throughput, number of apps/connections) and
+`collected/os_apps.csv` (per application: connections, connect time). Privacy by design: only process names and aggregate
+numbers are saved; no URLs, no remote IPs, no traffic content.
+
+**What it does not do (yet):** it observes and recommends; it does not change other applications' traffic. Optimizing
+traffic system-wide would need a local proxy (HTTPS would need a root certificate) or Windows network settings
+changes with admin rights. Per-application *throughput* is not measured (Windows needs ETW/admin for that); the
+agent uses connection counts and connect time instead. Only Windows has been tried; the registry autostart is Windows-only.
 
 ## 5. Data
 
@@ -136,5 +167,5 @@ Slow 3G -587 ms, No_Throttle -396 ms). This is an upper bound (images are remove
 
 ## 10. Repo hygiene
 
-Git-ignored: `__pycache__/`, `.venv/`, logs (`collected/*_log*.txt`), `collected/live_runs.jsonl`, `network_requests.csv`.
+Git-ignored: `__pycache__/`, `.venv/`, logs (`collected/*_log*.txt`), `collected/live_runs.jsonl`, `collected/os_*.csv`, `agent_state.json`, `network_requests.csv`.
 `collected/runs.csv` is the only copy of the new dataset: commit it, and merge by appending if several people collect (the collector keys rows on url + network + cpu + cache + variant + repeat, so give each machine a different `--out` file and concatenate).
