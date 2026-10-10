@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+collected/*_log*.txt
+collected/live_runs.jsonl
+collected/*_output.txt
+network_requests.csv

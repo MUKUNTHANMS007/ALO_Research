@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALO Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">A</span><span>ALO</span></div>
+    <nav id="nav">
+      <a href="#overview" data-page="overview">Overview</a>
+      <a href="#live" data-page="live">Live System</a>
+      <a href="#predictions" data-page="predictions">Predictions</a>
+      <a href="#optimizations" data-page="optimizations">Optimizations</a>
+      <a href="#history" data-page="history">History</a>
+      <a href="#model" data-page="model">Model</a>
+    </nav>
+    <div class="side-foot"><span class="dot" id="conn-dot"></span><span id="conn-text">Mock data</span></div>
+  </aside>
+
+  <main>
+    <!-- ================= OVERVIEW ================= -->
+    <section class="page" data-page="overview">
+      <header class="topbar">
+        <div>
+          <h1>Adaptive Latency Optimization</h1>
+          <p class="sub">Live device state, predicted page load time and the methods ALO chose</p>
+        </div>
+        <div class="controls">
+          <label class="field">URL
+            <input id="url" value="https://www.bbc.com" spellcheck="false">
+          </label>
+          <button id="predict" class="btn">Predict</button>
+        </div>
+      </header>
+
+      <section class="stats" id="stats"></section>
+
+      <section class="grid">
+        <article class="card hero">
+          <div class="card-head"><h2>Predicted load time</h2><span class="chip" id="profile-chip">Fast 4G</span></div>
+          <div class="gauge-wrap">
+            <svg viewBox="0 0 200 120" class="gauge">
+              <path d="M20 100 A80 80 0 0 1 180 100" class="g-track"/>
+              <path d="M20 100 A80 80 0 0 1 180 100" class="g-fill" id="g-fill"/>
+            </svg>
+            <div class="g-read"><span id="pred-val">--</span><small>seconds</small></div>
+          </div>
+          <p class="note" id="note" hidden></p>
+          <div class="hero-meta">
+            <div><small>Baseline</small><strong id="base-val">--</strong></div>
+            <div><small>With ALO</small><strong id="opt-val" class="good">--</strong></div>
+            <div><small>Saved</small><strong id="save-ms" class="good">--</strong><small id="save-val" class="good">--</small></div>
+          </div>
+        </article>
+
+        <article class="card wide">
+          <div class="card-head"><h2>Predicted vs actual</h2>
+            <div class="legend"><span class="l-a">Predicted</span><span class="l-b">Actual</span></div></div>
+          <svg id="trend" class="trend" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h2>Decisions taken</h2><span class="chip">estimated</span></div>
+          <ul class="actions" id="actions"></ul>
+        </article>
+
+        <article class="card bytes">
+          <div class="card-head"><h2>Where the bytes go</h2></div>
+          <div id="bytes" class="bars"></div>
+        </article>
+
+        <article class="card full">
+          <div class="card-head"><h2>Recent runs</h2><a class="link" href="#history">View all</a></div>
+          <table>
+            <thead><tr><th>Time</th><th>URL</th><th>Network</th><th>Methods used</th><th>Saved</th><th>Predicted</th><th>Actual</th><th>Error</th></tr></thead>
+            <tbody id="history"></tbody>
+          </table>
+        </article>
+      </section>
+    </section>
+
+    <!-- ================= LIVE SYSTEM ================= -->
+    <section class="page" data-page="live" hidden>
+      <header class="topbar"><div><h1>Live System</h1>
+        <p class="sub">What ALO reads from the operating system, refreshed every 1.5 s</p></div>
+        <span class="chip" id="live-profile">--</span></header>
+      <section class="grid">
+        <article class="card half"><div class="card-head"><h2>CPU</h2><strong id="l-cpu" class="big">--</strong></div>
+          <svg id="c-cpu" class="trend short" viewBox="0 0 600 140" preserveAspectRatio="none"></svg>
+          <div id="cores" class="cores"></div></article>
+        <article class="card half"><div class="card-head"><h2>Memory</h2><strong id="l-ram" class="big">--</strong></div>
+          <svg id="c-ram" class="trend short" viewBox="0 0 600 140" preserveAspectRatio="none"></svg>
+          <p class="fine" id="ram-detail"></p></article>
+        <article class="card half"><div class="card-head"><h2>Network latency</h2><strong id="l-rtt" class="big">--</strong></div>
+          <svg id="c-rtt" class="trend short" viewBox="0 0 600 140" preserveAspectRatio="none"></svg>
+          <p class="fine">Measured as the time to open a connection to 1.1.1.1, every 3 s in the background.</p></article>
+        <article class="card half"><div class="card-head"><h2>Throughput</h2><strong id="l-net" class="big">--</strong></div>
+          <svg id="c-net" class="trend short" viewBox="0 0 600 140" preserveAspectRatio="none"></svg>
+          <p class="fine">Download (blue) and upload (grey), total across all network adapters.</p></article>
+        <article class="card full">
+          <div class="card-head"><h2>How ALO uses these readings</h2></div>
+          <p class="fine big-text">Latency maps to a network profile: under 30 ms = fast wired/Wi-Fi, 30&ndash;200 ms = 4G-like, over 200 ms = 3G-like.
+            That profile and the page's size feed the model. CPU, memory and battery are displayed now and are the next inputs to add once the collector records them.</p>
+          <p class="fine" id="battery-line"></p>
+        </article>
+      </section>
+    </section>
+
+    <!-- ================= PREDICTIONS ================= -->
+    <section class="page" data-page="predictions" hidden>
+      <header class="topbar"><div><h1>Predictions</h1>
+        <p class="sub">What-if: the same page on every network condition</p></div>
+        <div class="controls"><label class="field">URL<input id="wi-url" value="https://www.bbc.com" spellcheck="false"></label>
+          <button class="btn" id="wi-go">Compare networks</button></div></header>
+      <p class="note" id="wi-note" hidden></p>
+      <section class="grid" id="wi-out">
+        <article class="card full"><p class="fine">Enter a URL and press Compare networks.</p></article>
+      </section>
+    </section>
+
+    <!-- ================= OPTIMIZATIONS ================= -->
+    <section class="page" data-page="optimizations" hidden>
+      <header class="topbar"><div><h1>Optimizations</h1>
+        <p class="sub">The methods ALO can use, how each saving is estimated, and what it risks</p></div>
+        <button class="btn ghost" id="opt-reset">Reset to defaults</button></header>
+      <section class="grid">
+        <article class="card full">
+          <div class="card-head"><h2>Selection rule</h2></div>
+          <label class="radio"><input type="radio" name="mode" value="top3"> Apply the <b>top 3</b> methods by estimated saving</label>
+          <label class="radio"><input type="radio" name="mode" value="threshold"> Apply every method that saves at least
+            <input type="number" id="opt-min" min="0" step="10" value="50"> ms</label>
+          <p class="fine">A minimum-saving rule avoids applying a method whose side effects may cost more than it saves.
+            Changes apply to the next prediction.</p>
+        </article>
+        <article class="card full">
+          <div class="card-head"><h2>Methods</h2></div>
+          <div id="methods" class="methods"></div>
+        </article>
+        <article class="card full">
+          <div class="card-head"><h2>How a saving is estimated</h2></div>
+          <p class="fine big-text" id="formula"></p>
+          <div id="throughput" class="tags"></div>
+          <p class="fine">These are estimates, not measurements. Measured savings need A/B runs of each method.</p>
+        </article>
+      </section>
+    </section>
+
+    <!-- ================= HISTORY ================= -->
+    <section class="page" data-page="history" hidden>
+      <header class="topbar"><div><h1>History</h1>
+        <p class="sub">Every prediction made in this browser (last 100). Click a row for the reasoning.</p></div>
+        <div class="controls"><input id="h-filter" placeholder="Filter by URL or method" spellcheck="false">
+          <button class="btn ghost" id="h-csv">Export CSV</button>
+          <button class="btn ghost" id="h-clear">Clear</button></div></header>
+      <section class="grid"><article class="card full">
+        <table><thead><tr><th>Time</th><th>URL</th><th>Network</th><th>Methods used</th><th>Saved</th><th>Baseline</th><th>Predicted</th></tr></thead>
+          <tbody id="h-body"></tbody></table>
+        <p class="fine" id="h-empty" hidden>No runs yet. Make a prediction on the Overview page.</p>
+      </article></section>
+    </section>
+
+    <!-- ================= MODEL ================= -->
+    <section class="page" data-page="model" hidden>
+      <header class="topbar"><div><h1>Model</h1>
+        <p class="sub">The decision tree behind the predictions, and how far to trust it</p></div></header>
+      <p class="note" id="m-note" hidden></p>
+      <section class="stats" id="m-stats"></section>
+      <section class="grid">
+        <article class="card half"><div class="card-head"><h2>Model comparison</h2><span class="chip">unseen sites</span></div>
+          <div id="m-comp" class="bars"></div>
+          <p class="fine">Mean error in seconds (lower is better). Each model is tested on websites it never saw during training.</p></article>
+        <article class="card half"><div class="card-head"><h2>What the tree relies on</h2></div>
+          <div id="m-imp" class="bars"></div></article>
+        <article class="card full"><div class="card-head"><h2>Tree rules (top levels)</h2><span class="chip">leaf value = log of load time in ms</span></div>
+          <pre id="m-rules" class="rules"></pre></article>
+        <article class="card full"><div class="card-head"><h2>Known limits</h2></div>
+          <ul class="limits">
+            <li>Trained on about 70 websites collected on one day; it generalises only roughly to other sites.</li>
+            <li>For a URL it has not seen, the page is assumed to be the median site.</li>
+            <li>The network profile is one of three trained conditions, derived from measured latency.</li>
+            <li>Per-method savings are physics-based estimates, not model output or measurements.</li>
+            <li>Device load (CPU, memory, battery) is not yet a model input.</li>
+          </ul></article>
+      </section>
+    </section>
+  </main>
+</div>
+
+<div class="drawer-bg" id="drawer-bg" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Decision details">
+  <div class="drawer-head"><div><h2 id="d-title">Decision details</h2><p class="sub" id="d-sub"></p></div>
+    <button class="x" id="d-close" aria-label="Close">&times;</button></div>
+  <div id="d-body"></div>
+</aside>
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

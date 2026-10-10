@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { font: 13px system-ui, sans-serif; width: 300px; margin: 0; padding: 12px; color: #0f172a; }
+  h1 { font-size: 15px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  label { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+  .st { font-size: 12px; margin: 6px 0; } .ok { color: #16a34a; } .bad { color: #dc2626; }
+  .box { background: #f1f5f9; border-radius: 8px; padding: 8px; margin-top: 8px; }
+  hr { border: 0; border-top: 1px solid #e2e8f0; margin: 8px 0; }
+  a { color: #0284c7; }
+</style>
+<h1>ALO <label><input type="checkbox" id="enabled"> On</label></h1>
+<div class="st" id="api">Checking API...</div>
+<hr>
+<label><input type="checkbox" id="lazy"> Lazy-load images &amp; iframes</label>
+<label><input type="checkbox" id="defer"> Delay analytics/ad scripts</label>
+<label><input type="checkbox" id="media"> Do not preload video/audio</label>
+<label><input type="checkbox" id="fonts"> Preconnect Google Fonts</label>
+<div style="font-size:11px;color:#64748b">Changes apply to pages you load next.</div>
+<div class="box" id="page">No page measured in this tab yet.</div>
+<div style="margin-top:8px"><a href="http://localhost:8000" target="_blank">Open dashboard</a></div>
+<script src="popup.js"></script>
