@@ -1,6 +1,7 @@
 """ALO API. Run from the project root:  python -m uvicorn api.main:app --port 8000
 Serves the dashboard at / and the JSON API under /api."""
 import json
+import csv
 import socket
 import statistics
 import threading
@@ -391,6 +392,17 @@ def live(after: str | None = None):
         if after in ids:
             return {'runs': LIVE[ids.index(after) + 1:]}
     return {'runs': LIVE[-20:]}
+
+
+@app.get('/api/comparison/results')
+def comparison_results():
+    """Return the latest paired extension comparison CSV for the local viewer."""
+    path = ROOT / 'extension_comparison_results.csv'
+    if not path.exists():
+        return {'exists': False, 'rows': [], 'filename': path.name}
+    with path.open(newline='', encoding='utf-8-sig') as f:
+        rows = list(csv.DictReader(f))
+    return {'exists': True, 'rows': rows, 'filename': path.name}
 
 
 @app.get('/')
