@@ -153,7 +153,7 @@ function openDetails(id) {
       <p>${esc(a.reason || a.detail)}</p></div>`;
   }).join('');
   const path = p.path && p.path.length
-    ? `<h3>How the model reached its prediction</h3><ol class="path">${p.path.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : '';
+    ? `<h3>How the model reached its prediction</h3><ol class="path">${p.path.map(x => `<li>${esc(x)}</li>`).join('')}</ol>${p.path_note ? `<p class="fine">${esc(p.path_note)}</p>` : ''}` : '';
   const src = p.source
     ? `<p class="fine">Page data: ${p.source === 'dataset' ? 'measured runs of this site' : 'median of all sites (this URL was not in the training data)'}.</p>` : '';
   $('d-body').innerHTML = `<h3>Why these methods</h3>${acts}${path}${src}

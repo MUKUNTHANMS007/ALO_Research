@@ -8,7 +8,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   // methods the extension did not actually apply on this page are marked disabled so the prediction matches reality
   const disabled = Object.entries(METHOD_OF).filter(([k]) => !(msg.stats[k] > 0)).map(([, v]) => v);
   fetch(`${API}/api/report`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ url: msg.url, load_ms: msg.load_ms, stats: msg.stats, disabled }) })
+    body: JSON.stringify({ url: msg.url, load_ms: msg.load_ms, stats: msg.stats, disabled, page: msg.page }) })
     .then(r => r.json())
     .then(run => {
       chrome.storage.session.set({ ['tab' + tabId]: { url: msg.url, load_ms: msg.load_ms, stats: msg.stats, run } });

@@ -43,11 +43,44 @@
   };
   new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(scan))).observe(document, { childList: true, subtree: true });
 
+  // Page weight by the same resource types the model uses. Cross-origin responses without Timing-Allow-Origin report
+  // transferSize 0 (the browser hides it): those are counted in `unknown` and priced by the API at a typical size.
+  function typeOf(e) {
+    const path = e.name.split(/[?#]/)[0].toLowerCase();
+    if (/\.(woff2?|ttf|otf|eot)$/.test(path)) return 'font';
+    if (/\.(png|jpe?g|gif|webp|avif|svg|ico|bmp)$/.test(path)) return 'image';
+    if (/\.(mp4|webm|m3u8|mp3|ogg|wav|m4a|mpd)$/.test(path)) return 'media';
+    if (/\.m?js$/.test(path)) return 'script';
+    if (/\.css$/.test(path)) return 'stylesheet';
+    switch (e.initiatorType) {
+      case 'script': return 'script';
+      case 'img': case 'image': return 'image';
+      case 'video': case 'audio': return 'media';
+      case 'xmlhttprequest': case 'fetch': return 'xhr_fetch';
+      default: return 'other';
+    }
+  }
+  function pageWeight(nav) {
+    const bytes = { document: nav.transferSize || 0 }, unknown = {};
+    const res = performance.getEntriesByType('resource');
+    for (const e of res) {
+      const t = typeOf(e);
+      if (e.transferSize > 0) bytes[t] = (bytes[t] || 0) + e.transferSize;
+      else if (e.encodedBodySize === 0 && e.deliveryType !== 'cache') unknown[t] = (unknown[t] || 0) + 1;
+    }
+    // Chrome's "Nodes" counter (what the collector recorded) counts every DOM node, text nodes included.
+    let nodes = 0;
+    const it = document.createNodeIterator(document, NodeFilter.SHOW_ALL);
+    while (it.nextNode()) nodes++;
+    return { bytes, unknown, requests: res.length + 1, dom_nodes: nodes };
+  }
+
   addEventListener('load', () => setTimeout(() => {
     const nav = performance.getEntriesByType('navigation')[0];
     if (!nav || !(nav.loadEventEnd > 0)) return;
     try {
-      chrome.runtime.sendMessage({ type: 'page-loaded', url: location.origin + location.pathname, load_ms: nav.loadEventEnd, stats });
+      chrome.runtime.sendMessage({ type: 'page-loaded', url: location.origin + location.pathname, load_ms: nav.loadEventEnd,
+                                   stats, page: pageWeight(nav) });
     } catch { /* extension reloaded */ }
   }, 800), { once: true });
 })();

@@ -40,7 +40,7 @@ Target `log1p(load time)`. Folds are grouped by website (5 folds, repeated 3 tim
 | Extra Trees, 11 features + TTFB (not usable pre-load) | 0.797 | 4.53 s |
 | Tree, total bytes + TTFB (not usable pre-load) | 0.741 | 5.08 s |
 
-As before, extra features do not help the single tree, so the exported model keeps the two-input design.
+As before, extra features do not help the single tree. They do help an ensemble, and the exported predictor was switched accordingly (2026-10-14): on the same 15 folds, paired against the tree, Extra Trees with 11 features and `min_samples_leaf=2` scored **R² 0.769 ± 0.032, mean error 4.34 s, median error 1.58 s**, and won in 15 of 15 folds (mean ΔR² +0.052, Wilcoxon p = 0.0001). `min_samples_leaf` was picked from {2, 4, 8} on this same CV, so the figure is slightly optimistic. Random forest (0.764) and gradient boosting (0.760) landed in the same range. The single tree is still exported for the readable rule view. Extra Trees improves every network (R² / mean error, same folds): Slow 3G 0.90 / 4.4 s → 0.92 / 3.4 s, Fast 4G 0.58 / 7.6 s → 0.65 / 6.5 s, No_Throttle 0.44 / 3.3 s → 0.55 / 2.9 s. Fast 4G is still the weakest, and its slowest 10% of loads still average a 33 s error. The per-network table below is for the single tree.
 
 Error by network (tree, out of fold):
 
@@ -54,7 +54,7 @@ Unthrottled R² improved from -0.37 (old data) to 0.44, probably thanks to the w
 
 ## 5. Exported model
 
-`model/alo_tree.joblib`: depth 5, 26 leaves, minimum leaf 10. Splitting power: total bytes 59%, Slow 3G 34%, No_Throttle 5%, Fast 4G 3%. `model/url_profiles.json` holds page profiles for 277 URLs (old-dataset profiles are kept for URLs the new collector did not cover). Restart the API (`python -m uvicorn api.main:app --port 8000`) to load it.
+`model/alo_et.joblib` is the predictor (Extra Trees, 300 trees, 11 composition features + network). `model/alo_tree.joblib` is the single tree used for the rule view. Tree details: depth 5, 26 leaves, minimum leaf 10. Splitting power: total bytes 59%, Slow 3G 34%, No_Throttle 5%, Fast 4G 3%. `model/url_profiles.json` holds page profiles for 277 URLs (old-dataset profiles are kept for URLs the new collector did not cover). Restart the API (`python -m uvicorn api.main:app --port 8000`) to load it.
 
 ## 6. Method-removal experiment (no_images)
 
@@ -67,7 +67,7 @@ Paired against the baseline for the same URL and network (cold cache, 1x CPU):
 | Slow_3G | 219 | -587 ms |
 | No_Throttle | 292 | -396 ms |
 
-Blocking images removes them entirely, so these are upper bounds on what image optimisation could save. The other variants (third-party scripts, fonts, media) were only run on 3 sites and are not enough to conclude anything.
+Blocking images removes them entirely, so these are upper bounds on what image optimisation could save. **They are also inflated by drift:** the `no_images` run of a URL was taken a median of 71 h after its baseline, and pages with zero image bytes still came out faster (Fast 4G 39%, No_Throttle 8%, Slow 3G 2%). After removing that offset (`train_savings.py`), the image effect is about 0.95 x image byte share of the load time on Slow 3G (90% CI 0.91-0.97), 0.50 on Fast 4G (0.40-0.61) and 0.30 on No_Throttle (0.17-0.46). Collect variants back to back with their baselines to avoid this. The other variants (third-party scripts, fonts, media) were only run on 3 sites and are not enough to conclude anything.
 
 ## 7. Limits
 

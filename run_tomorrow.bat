@@ -17,7 +17,9 @@ echo [4/4] Export the model (back up the current one first)
 if not exist model\v2_backup mkdir model\v2_backup
 copy /Y model\alo_tree.joblib model\v2_backup\ >nul
 copy /Y model\url_profiles.json model\v2_backup\ >nul
+if exist model\alo_et.joblib copy /Y model\alo_et.joblib model\v2_backup\ >nul
 python -I train_model.py > collected\train_model_output.txt 2>&1
+python -I train_savings.py > collected\train_savings_output.txt 2>&1
 
 echo DONE. See collected\train_new_output.txt and collected\train_model_output.txt
 pause

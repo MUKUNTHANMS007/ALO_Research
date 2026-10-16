@@ -11,13 +11,13 @@ A dashboard shows predictions next to the load times measured in the browser.
 | Part | Files | What it does |
 |---|---|---|
 | Data collector | `collect.py`, `urls.txt` | Loads URLs in headless Chromium (Playwright) under simulated networks / CPU / cache / blocking variants and records timings, bytes, CPU. |
-| Training / evaluation | `train_new.py`, `train_model.py` | `train_new.py` evaluates models on `collected/runs.csv`; `train_model.py` exports the model the API uses. |
+| Training / evaluation | `train_new.py`, `train_model.py`, `train_savings.py` | `train_new.py` evaluates models on `collected/runs.csv`; `train_model.py` exports the model the API uses; `train_savings.py` writes `model/savings_calibration.json` (measured image effect per network, used for the per-method savings). |
 | Legacy training (first dataset) | `clean.py`, `train_tree.py`, `train_v2.py`, `train_all.py`, `new_preprocessed.csv`, `page_runs*.csv` | Original 71-site experiments. `train_all.py` produced `reports/results.json` and the `reports/fig_*.png` figures (old data only). |
 | API + dashboard | `api/main.py`, `ui/` | FastAPI serves predictions at `/api/*` and the dashboard at `/`. |
 | **OS agent** | `agent/telemetry.py`, `agent/tray.py`, `agent/alo_agent.pyw` | Background Windows agent with a tray On/Off switch. Measures the network of **every** application (no browser needed) and feeds the dashboard's *OS Agent* page. See section 4b. |
 | Browser extension | `extension/` | Chrome MV3 extension: applies optimizations to pages you open and reports measured load time to the API. |
 | Reports | `ALO_Training_Report.md` (current), `reports/ALO_Training_Report_v1_71sites.md` (old) | Results and limits. Read `ALO_Training_Report.md` first. |
-| Saved models | `model/alo_tree.joblib` (used by API), `model/url_profiles.json`, `model/alo_extratrees.joblib` (old, not wired in), `model/v1_old/` (first model backup) | |
+| Saved models | `model/alo_et.joblib` (**predictor** used by the API: Extra Trees, 11 features), `model/alo_tree.joblib` (single tree, used only for the readable rules / decision path), `model/url_profiles.json`, `model/savings_calibration.json`, `model/alo_extratrees.joblib` (old, not wired in), `model/v1_old/`, `model/v2_backup/` (previous exports) | |
 | Helpers | `start_alo.bat`, `run_tomorrow.bat` | Start the API; run the long data collection + retrain. |
 
 ## 2. Setup
@@ -50,8 +50,8 @@ API endpoints (`api/main.py`):
 |---|---|
 | `GET /api/health` | model metrics |
 | `GET /api/system` | live CPU/RAM/RTT of this machine and the network profile guessed from RTT |
-| `POST /api/predict` `{url, profile?, disabled?, min_saving_ms?}` | baseline prediction + per-method savings |
-| `POST /api/report` `{url, load_ms, stats, disabled}` | called by the extension after a page load; stored with predicted vs measured |
+| `POST /api/predict` `{url, profile?, disabled?, min_saving_ms?, page?}` | baseline prediction + per-method savings. `page` = `{bytes:{type:n}, unknown:{type:count}, requests}` is the real page weight seen by the browser; when present it replaces the stored/median profile (`source: "browser"`). |
+| `POST /api/report` `{url, load_ms, stats, disabled, page?}` | called by the extension after a page load; stored with predicted vs measured. With `page`, the model's prediction on the observed bytes is the "optimized" figure, so predicted vs measured is a like-for-like check of the model. |
 | `GET /api/live?after=<id>` | runs reported by the extension (the dashboard polls this) |
 | `GET /api/methods`, `GET /api/model` | info pages |
 
@@ -129,6 +129,7 @@ python collect.py --variants no_third_party_scripts,no_fonts,no_media --cpus cpu
 python collect.py --variants baseline --cpus cpu_1x --caches cold --repeats 2
 ```
 
+- **Measuring a variant's effect (e.g. image blocking): use `--paired`.** The default order is breadth-first, which puts a URL's baseline and variant runs ~71 h apart and makes drift look like savings (section 8). `python collect.py --paired --variants baseline,no_images --cpus cpu_1x --caches cold --repeats 2 --limit 120` runs both variants of each URL + network back to back, alternating which goes first (`plan()` in `collect.py`). Repeat 1 is already in `runs.csv` (skipped), so this adds repeat 2. Roughly 120 sites x 3 networks x 2 variants = 720 runs, about 3 to 6 hours (median 7-8 s per run unthrottled/4G, 26 s on Slow 3G). `train_savings.py` switches to these adjacent pairs automatically once 100 sites have them.
 - Resumable: finished combinations are skipped. It waits (and logs) when the internet is down, and never records offline failures as data.
 - Slow. A full run of every combination is ~58,000 runs (days). Slow 3G pages take up to 90 s each and often time out.
 - Keep the laptop plugged in, awake and online. `run_tomorrow.bat` runs the 2nd and 3rd commands, then `train_new.py` and `train_model.py`.
@@ -142,7 +143,7 @@ python train_model.py     # exports model/alo_tree.joblib + model/url_profiles.j
 ```
 
 - Target: `log1p(page_load_time_ms)`. Evaluation: **cross-validation grouped by website** (5 folds, repeated 3 times); a site is never in both train and test. Never use a random split: each site appears several times and it leaks.
-- Exported model: decision tree on `total_network_bytes` + network profile only (more features made the single tree worse with this little data).
+- Exported models (`train_model.py`): **Extra Trees** (300 trees, `min_samples_leaf=2`) on the 11 page-composition features + network profile, which does the predicting; and the single decision tree on `total_network_bytes` + network profile (more features did not help a *single* tree), kept because its rules are readable. On the same 15 grouped folds Extra Trees beat the tree in 15/15 (paired dR2 +0.05, Wilcoxon p = 0.0001). `min_samples_leaf` was chosen from {2, 4, 8} on that same CV, so its score is slightly optimistic.
 - Do not use outcome columns measured during the load (request durations, TTFB, task time) as inputs: that is leakage and inflated R2 by 0.12 to 0.17 in the first study. TTFB gives R2 0.80 in `train_new.py` but is unusable for "predict before loading".
 - `train_model.py` overwrites `model/alo_tree.joblib`. Copy the old one first (as `run_tomorrow.bat` does into `model/v2_backup/`).
 
@@ -151,11 +152,12 @@ python train_model.py     # exports model/alo_tree.joblib + model/url_profiles.j
 | Model | R2 (log) | Mean error |
 |---|---|---|
 | Median guess | n/a | 12.1 s |
-| **Decision tree, bytes + network (exported)** | **0.72 +/- 0.05** | 5.2 s (median 1.9 s) |
-| Extra Trees, 11 features | 0.76 | 4.7 s |
+| **Extra Trees, 11 features (exported predictor)** | **0.77 +/- 0.03** | 4.3 s (median 1.6 s) |
+| Decision tree, bytes + network (exported rule view) | 0.72 +/- 0.05 | 5.2 s (median 1.9 s) |
+| Extra Trees, 11 features, `min_samples_leaf=4` | 0.76 | 4.7 s |
 | Extra Trees + TTFB (not usable pre-load) | 0.80 | 4.5 s |
 
-Per network (tree): Slow 3G R2 0.89, Fast 4G 0.61 (largest error, 7.3 s, cause not investigated), No_Throttle 0.44.
+Per network (same folds, R2 / mean error): single tree Slow 3G 0.90 / 4.4 s, Fast 4G 0.58 / 7.6 s, No_Throttle 0.44 / 3.3 s; **Extra Trees** Slow 3G 0.92 / 3.4 s, Fast 4G 0.65 / 6.5 s, No_Throttle 0.55 / 2.9 s. Fast 4G stays the weakest: its slowest 10% of loads (often 3-9 MB pages that took 50-90 s) still average a 33 s error, and the cause is not investigated.
 The model trained on the first dataset transfers badly to the new data (R2 0.48), so do not mix the datasets blindly.
 Full details: `ALO_Training_Report.md`.
 
@@ -165,11 +167,25 @@ Full details: `ALO_Training_Report.md`.
 Slow 3G -587 ms, No_Throttle -396 ms). This is an upper bound (images are removed, not compressed). The other variants
 (third-party scripts, fonts, media) have only 3 sites of data so far.
 
+**Those raw medians are inflated by drift.** The collector runs breadth-first, so a URL's `no_images` run happened a median
+of 71 h after its baseline run. Pages with no image bytes at all (the control group) still came out faster in the second
+run: 39% on Fast 4G, 8% on No_Throttle, 2% on Slow 3G. `train_savings.py` therefore fits `saving = offset + slope x
+image byte share` per network and keeps only the slope (90% CI from a bootstrap over websites):
+
+| Network | Slope | 90% CI | Drift offset |
+|---|---|---|---|
+| Slow_3G | 0.95 | 0.91-0.97 | 0.01 (clean: removing images saves about their share of the bytes) |
+| Fast_4G | 0.50 | 0.40-0.61 | 0.40 |
+| No_Throttle | 0.30 | 0.17-0.46 | 0.17 |
+
+The API uses this for *Lazy-load images* (`basis: "measured"`). To measure properly, collect baseline and variant back to
+back (adjacent runs, ideally alternating order) so the drift cancels.
+
 ## 9. Known issues and suggested next work
 
-1. **Savings shown per method are an estimate, not model output**: `removed bytes / assumed throughput * 0.6` in `api/main.py` (`ACTIONS`, `THROUGHPUT_BPS`). Replace with measured effects from the collector variants once they exist for many sites.
+1. **Savings shown per method are not tree output.** *Lazy-load images* now uses the measured effect (section 8); the other three methods still use `removed bytes / assumed throughput * 0.6` in `api/main.py` (`ACTIONS`, `THROUGHPUT_BPS`, `basis: "estimate"`). Replace them with measured effects once those variants exist for many sites, collected back to back with the baseline.
 2. **Run the other variants and repeats 2-3** across all URLs (`run_tomorrow.bat`), then re-run `train_new.py` / `train_model.py` and refresh the report and `reports/fig_*.png` (the figures and `reports/results.json` still describe the old dataset; `train_all.py` reads the old `new_preprocessed.csv` and needs the same adapter `train_new.py` has).
-3. **Unseen URLs get a median page profile** in the API; the model only knows page bytes for the 277 stored sites. For real use, the extension could send the page's actual byte count (e.g. from `performance.getEntriesByType('resource')`) to `/api/predict`.
+3. **Unseen URLs get a median page profile** in the API unless the caller sends `page` bytes. The extension now does (`pageWeight()` in `extension/content.js`, Resource Timing), but Chrome hides the size of cross-origin responses without `Timing-Allow-Origin`, so only 44-93% of the true bytes were disclosed on the 3 pages tried. The API prices hidden requests at the median size of their type; the result was within 3% of the CDP total on 2 pages and 65% too high on theguardian.com (many tiny trackers). Untested inside Chrome itself, only the same code run through Playwright.
 4. **Network profile is guessed from RTT** (`network_profile()` in `api/main.py`: <30 ms = No_Throttle, <200 ms = Fast_4G, else Slow_3G). That is crude.
 5. **Extension is untested in a real browser** and its optimizations are partial (section 4). The dashboard's Optimizations page toggles do not control the extension (popup toggles do).
 6. **Data limits**: one machine, simulated networks, one repeat per combination, failed loads dropped (mostly on Slow 3G, so the slowest pages are under-represented). The unexplained Fast 4G error is the best modelling lead.

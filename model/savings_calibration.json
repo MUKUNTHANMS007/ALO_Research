@@ -1,0 +1,45 @@
+{
+ "images": {
+  "No_Throttle": {
+   "slope": 0.298,
+   "slope_ci90": [
+    0.169,
+    0.46
+   ],
+   "drift_offset": 0.171,
+   "pairs": 260,
+   "zero_image_pairs": 45
+  },
+  "Fast_4G": {
+   "slope": 0.504,
+   "slope_ci90": [
+    0.396,
+    0.613
+   ],
+   "drift_offset": 0.399,
+   "pairs": 247,
+   "zero_image_pairs": 44
+  },
+  "Slow_3G": {
+   "slope": 0.947,
+   "slope_ci90": [
+    0.905,
+    0.97
+   ],
+   "drift_offset": 0.009,
+   "pairs": 186,
+   "zero_image_pairs": 50
+  }
+ },
+ "pairing": "drifted: median gap 71 h, only 2 sites with back-to-back pairs",
+ "request_bytes": {
+  "document": 17349,
+  "script": 27417,
+  "stylesheet": 9337,
+  "image": 10572,
+  "font": 33137,
+  "xhr_fetch": 2121,
+  "media": 20777,
+  "other": 21
+ }
+}

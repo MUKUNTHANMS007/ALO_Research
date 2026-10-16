@@ -223,6 +223,23 @@ def is_offline_error(msg):
     return any(m in (msg or '') for m in OFFLINE_ERRORS)
 
 
+def plan(urls, variants, cpus, caches, repeats, paired=False):
+    """Run order as (url, network, cpu, cache, variant, repeat) tuples.
+    Default is breadth-first: repeat > variant > cpu > cache > network > url (a URL's variants end up hours apart).
+    paired: repeat > cpu > cache > network > url > variant, i.e. all variants of one URL + network run back to back,
+    with the order alternating between URLs. Variant effects are then differences between adjacent runs, so slow drift
+    (CDN warm-up, machine load, time of day) cancels instead of showing up as a fake 'saving'."""
+    if not paired:
+        return [(u, net, c, ca, v, rep) for rep, v, c, ca, net, u in
+                itertools.product(range(1, repeats + 1), variants, cpus, caches, NETWORK, urls)]
+    out = []
+    for rep, c, ca, net in itertools.product(range(1, repeats + 1), cpus, caches, NETWORK):
+        for i, u in enumerate(urls):
+            for v in (variants if i % 2 == 0 else variants[::-1]):
+                out.append((u, net, c, ca, v, rep))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--urls', default='urls.txt')
@@ -231,6 +248,8 @@ def main():
     ap.add_argument('--timeout', type=int, default=90)
     ap.add_argument('--retries', type=int, default=2, help='extra attempts for non-network failures')
     ap.add_argument('--quick', action='store_true', help='smoke test: baseline+no_images, cpu_1x, cold only')
+    ap.add_argument('--paired', action='store_true', help='run all variants of a URL + network back to back, alternating '
+                    'order (use with --variants baseline,no_images and a new --repeats number); see plan()')
     ap.add_argument('--out', default='collected/runs.csv')
     ap.add_argument('--variants', help='comma list, e.g. baseline,no_fonts (default: all)')
     ap.add_argument('--cpus', help='comma list of cpu_1x,cpu_4x (default: both)')
@@ -270,9 +289,7 @@ def main():
                                         if not is_offline_error(r.get('error_message'))}
     new = not os.path.exists(a.out)
 
-    # breadth-first: repeat > variant > cpu > cache > network > url
-    combos = [(u, net, c, ca, v, rep) for rep, v, c, ca, net, u in
-              itertools.product(range(1, a.repeats + 1), variants, cpus, caches, NETWORK, urls)]
+    combos = plan(urls, variants, cpus, caches, a.repeats, a.paired)
     todo = [c for c in combos if (c[0], c[1], c[2], c[3], c[4], str(c[5])) not in done]
     print(f'{len(combos)} runs planned, {len(combos) - len(todo)} already done, {len(todo)} to go')
     if not todo:
