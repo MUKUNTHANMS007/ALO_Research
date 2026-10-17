@@ -36,7 +36,9 @@ def paired_images(path='collected/runs.csv'):
     j = b[cols + ['timestamp_utc']].join(n[['page_load_time_ms', 'timestamp_utc']], rsuffix='_noimg', how='inner').reset_index()
     j['share'] = j.image_bytes / j.total_network_bytes
     j['frac'] = 1 - j.page_load_time_ms_noimg / j.page_load_time_ms
-    j['gap_h'] = (pd.to_datetime(j.timestamp_utc_noimg) - pd.to_datetime(j.timestamp_utc)).dt.total_seconds().abs() / 3600
+    dt = (pd.to_datetime(j.timestamp_utc_noimg) - pd.to_datetime(j.timestamp_utc)).dt.total_seconds()
+    j['gap_h'] = dt.abs() / 3600
+    j['noimg_second'] = (dt > 0).astype(int)  # which run of the pair went second (warm DNS/CDN/server caches help it)
     return j
 
 
@@ -44,8 +46,12 @@ MIN_ADJACENT_SITES = 100  # back-to-back pairs (collect.py --paired) are used on
 
 
 def fit(x):
-    q = QuantileRegressor(quantile=0.5, alpha=0, solver='highs').fit(x[['share']], x.frac)
-    return float(q.intercept_), float(q.coef_[0])
+    """Median regression  frac = a + b * image_share [+ c * no_images_ran_second].  Returns (a, b, c).
+    On the fast networks the run that goes second is ~14-19% faster whatever the variant, so c is modelled when both
+    orders are present (collect.py --paired alternates them); it is meaningless for pairs that are hours apart."""
+    cols = ['share'] + (['noimg_second'] if x.noimg_second.nunique() > 1 else [])
+    q = QuantileRegressor(quantile=0.5, alpha=0, solver='highs').fit(x[cols], x.frac)
+    return float(q.intercept_), float(q.coef_[0]), float(q.coef_[1]) if len(cols) > 1 else 0.0
 
 
 def main():
@@ -61,17 +67,18 @@ def main():
     out = {'images': {}, 'pairing': pairing}
     for net in NETS:
         x = j[j.network_profile == net]
-        a, b = fit(x)
+        a, b, c = fit(x)
         boots = []
-        for _ in range(100):  # resample websites, not rows: runs of one site are not independent
+        for _ in range(200):  # resample websites, not rows: runs of one site are not independent
             pick = rng.choice(sites, len(sites))
             xs = pd.concat([x[x.url == s] for s in pick if (x.url == s).any()])
             boots.append(fit(xs)[1])
         lo, hi = np.percentile(boots, [5, 95])
         out['images'][net] = {'slope': round(b, 3), 'slope_ci90': [round(float(lo), 3), round(float(hi), 3)],
-                              'drift_offset': round(a, 3), 'pairs': int(len(x)),
-                              'zero_image_pairs': int((x.image_bytes < 1000).sum())}
-        print(f'{net:12s} pairs {len(x):4d}  slope {b:.3f} (90% CI {lo:.3f}..{hi:.3f})  drift offset {a:.3f}')
+                              'significant': bool(lo > 0), 'drift_offset': round(a, 3), 'order_effect': round(c, 3),
+                              'pairs': int(len(x)), 'zero_image_pairs': int((x.image_bytes < 1000).sum())}
+        print(f'{net:12s} pairs {len(x):4d}  slope {b:.3f} (90% CI {lo:.3f}..{hi:.3f}, '
+              f'{"significant" if lo > 0 else "NOT distinguishable from 0"})  offset {a:.3f}  order effect {c:.3f}')
 
     old = pd.read_csv('new_preprocessed.csv')
     old = old[(old.navigation_status == 'success') & (old.request_count > 1)]

@@ -4,7 +4,7 @@ Predicts how long a web page takes to load from its size and the network it is l
 methods (lazy loading, script deferral, ...) would save, and applies some of them live in Chrome through an extension.
 A dashboard shows predictions next to the load times measured in the browser.
 
-> Status (2026-10-10): working prototype. Model trained on 715 runs / 277 websites. Hand-over notes are in section 9.
+> Status (2026-10-17): working prototype. Model trained on 967 runs / 279 websites. Hand-over notes are in section 9; a self-contained summary for newcomers is in `HANDOFF.md`.
 
 ## 1. What is in this repo
 
@@ -42,7 +42,7 @@ python -m uvicorn api.main:app --port 8000      # or double-click start_alo.bat
 
 Open http://localhost:8000. The bottom-left of the dashboard says "Live (API connected)" when it is talking to the real
 backend. If the API is unreachable the UI silently falls back to **mock data** (`ui/api.js`), so check that badge and that
-the Model page shows 715 runs / 277 sites.
+the Model page shows 967 runs / 279 sites.
 
 API endpoints (`api/main.py`):
 
@@ -113,8 +113,8 @@ agent uses connection counts and connect time instead. Only Windows has been tri
 
 | File | Rows | Notes |
 |---|---|---|
-| `collected/runs.csv` | ~1,760 | **Current training data.** Output of `collect.py`. Training uses only `variant=baseline`, `cpu_1x`, `cold` cache, success, >1 request, >100 ms: 715 runs, 277 sites. Other rows are the `no_images` variant (~800) and small samples of other variants/CPU/cache. |
-| `collected/failed.csv` | ~135 | Failed runs (timeouts, resets); not used for training. |
+| `collected/runs.csv` | ~2,350 | **Current training data.** Output of `collect.py`. Training uses only `variant=baseline`, `cpu_1x`, `cold` cache, success, >1 request, >100 ms: 967 runs (715 repeat 1 + 252 repeat 2), 279 sites. Other rows are the `no_images` variant (~1,100, of which ~250 are back-to-back pairs) and small samples of other variants/CPU/cache. |
+| `collected/failed.csv` | ~400 | Failed runs (timeouts, resets); not used for training. |
 | `new_preprocessed.csv` | 801 | First dataset (89 URLs x 3 networks x 3 repeats, collected 2026-09-26). Now only used for page profiles of URLs the new collector missed. |
 | `page_runs.csv`, `page_runs_clean.csv`, `network_requests.csv` | | Raw inputs of the first dataset. `network_requests.csv` (46 MB) is git-ignored; ask the owner if you need it. The script that produced the first dataset is **not** in this repo. |
 | `urls.txt` | 324 | URL list for the collector. |
@@ -143,7 +143,7 @@ python train_model.py     # exports model/alo_tree.joblib + model/url_profiles.j
 ```
 
 - Target: `log1p(page_load_time_ms)`. Evaluation: **cross-validation grouped by website** (5 folds, repeated 3 times); a site is never in both train and test. Never use a random split: each site appears several times and it leaks.
-- Exported models (`train_model.py`): **Extra Trees** (300 trees, `min_samples_leaf=2`) on the 11 page-composition features + network profile, which does the predicting; and the single decision tree on `total_network_bytes` + network profile (more features did not help a *single* tree), kept because its rules are readable. On the same 15 grouped folds Extra Trees beat the tree in 15/15 (paired dR2 +0.05, Wilcoxon p = 0.0001). `min_samples_leaf` was chosen from {2, 4, 8} on that same CV, so its score is slightly optimistic.
+- Exported models (`train_model.py`): **Extra Trees** (300 trees, `min_samples_leaf=2`) on the 11 page-composition features + network profile, which does the predicting; and the single decision tree on `total_network_bytes` + network profile (more features did not help a *single* tree), kept because its rules are readable. On the same 15 grouped folds Extra Trees beat the tree in 13/15 (paired dR2 +0.047, Wilcoxon p = 0.0003; it was 15/15 on the earlier 715 runs). `min_samples_leaf` was chosen from {2, 4, 8} on that same CV, so its score is slightly optimistic.
 - Do not use outcome columns measured during the load (request durations, TTFB, task time) as inputs: that is leakage and inflated R2 by 0.12 to 0.17 in the first study. TTFB gives R2 0.80 in `train_new.py` but is unusable for "predict before loading".
 - `train_model.py` overwrites `model/alo_tree.joblib`. Copy the old one first (as `run_tomorrow.bat` does into `model/v2_backup/`).
 
@@ -152,12 +152,12 @@ python train_model.py     # exports model/alo_tree.joblib + model/url_profiles.j
 | Model | R2 (log) | Mean error |
 |---|---|---|
 | Median guess | n/a | 12.1 s |
-| **Extra Trees, 11 features (exported predictor)** | **0.77 +/- 0.03** | 4.3 s (median 1.6 s) |
-| Decision tree, bytes + network (exported rule view) | 0.72 +/- 0.05 | 5.2 s (median 1.9 s) |
-| Extra Trees, 11 features, `min_samples_leaf=4` | 0.76 | 4.7 s |
-| Extra Trees + TTFB (not usable pre-load) | 0.80 | 4.5 s |
+| **Extra Trees, 11 features (exported predictor)** | **0.745 +/- 0.033** | 4.4 s (median 1.6 s) |
+| Decision tree, bytes + network (exported rule view) | 0.698 +/- 0.027 | 5.0 s (median 1.9 s) |
 
-Per network (same folds, R2 / mean error): single tree Slow 3G 0.90 / 4.4 s, Fast 4G 0.58 / 7.6 s, No_Throttle 0.44 / 3.3 s; **Extra Trees** Slow 3G 0.92 / 3.4 s, Fast 4G 0.65 / 6.5 s, No_Throttle 0.55 / 2.9 s. Fast 4G stays the weakest: its slowest 10% of loads (often 3-9 MB pages that took 50-90 s) still average a 33 s error, and the cause is not investigated.
+These are on the 967-run dataset. On the earlier 715 runs the same models scored 0.769 / 4.3 s and 0.717 / 5.2 s; the method is unchanged, so the drop comes with the added repeat-2 runs (and the different mix of networks and sites in them); why they are harder to predict was not investigated. The older rows of this table (Extra Trees with `min_samples_leaf=4`, Extra Trees + TTFB at R2 0.80 which is not usable pre-load) were measured on the 715-run data and have not been repeated.
+
+Per network (same folds, R2 / mean error): single tree Slow 3G 0.91 / 4.0 s, Fast 4G 0.57 / 6.7 s, No_Throttle 0.44 / 3.9 s; **Extra Trees** Slow 3G 0.92 / 3.1 s, Fast 4G 0.64 / 6.1 s, No_Throttle 0.53 / 3.6 s. Fast 4G stays the weakest: its slowest 10% of loads (often 3-9 MB pages that took 50-90 s) still average a 33 s error (measured on the 715-run data), and the cause is not investigated.
 The model trained on the first dataset transfers badly to the new data (R2 0.48), so do not mix the datasets blindly.
 Full details: `ALO_Training_Report.md`.
 
@@ -170,20 +170,34 @@ Slow 3G -587 ms, No_Throttle -396 ms). This is an upper bound (images are remove
 **Those raw medians are inflated by drift.** The collector runs breadth-first, so a URL's `no_images` run happened a median
 of 71 h after its baseline run. Pages with no image bytes at all (the control group) still came out faster in the second
 run: 39% on Fast 4G, 8% on No_Throttle, 2% on Slow 3G. `train_savings.py` therefore fits `saving = offset + slope x
-image byte share` per network and keeps only the slope (90% CI from a bootstrap over websites):
+image byte share` per network and keeps only the slope (90% CI from a bootstrap over websites). That first fit, on the
+71 h-apart pairs, gave slopes of 0.95 (Slow 3G), 0.50 (Fast 4G) and 0.30 (No_Throttle), but with a 0.40 / 0.17 offset on the
+fast networks, i.e. mostly drift.
 
-| Network | Slope | 90% CI | Drift offset |
-|---|---|---|---|
-| Slow_3G | 0.95 | 0.91-0.97 | 0.01 (clean: removing images saves about their share of the bytes) |
-| Fast_4G | 0.50 | 0.40-0.61 | 0.40 |
-| No_Throttle | 0.30 | 0.17-0.46 | 0.17 |
+**Back-to-back re-measurement (2026-10-17).** `collect.py --paired` collected 253 adjacent pairs (<1 h apart, alternating
+which variant goes first; 95 No_Throttle, 96 Fast 4G, 62 Slow 3G). Two things showed up:
 
-The API uses this for *Lazy-load images* (`basis: "measured"`). To measure properly, collect baseline and variant back to
-back (adjacent runs, ideally alternating order) so the drift cancels.
+1. The drift disappears: the median "saving" falls to 3% (No_Throttle), 10% (Fast 4G) and 3% (Slow 3G), against 22% / 48% / 10% for the 71 h pairs.
+2. **On the fast networks, whichever run goes second is 14-19% faster whatever the variant** (warm DNS / CDN / server caches).
+   Slow 3G has no such effect (0.001). `train_savings.py` therefore fits `saving = a + slope x image share + c x (no_images ran second)` and keeps the slope:
+
+| Network | Pairs | Slope | 90% CI | Order effect c | Verdict |
+|---|---|---|---|---|---|
+| Slow_3G | 62 | 0.94 | 0.88-0.97 | 0.00 | significant: removing images saves about their byte share |
+| Fast_4G | 96 | 0.02 | -0.14-0.56 | 0.14 | not distinguishable from zero |
+| No_Throttle | 95 | 0.06 | -0.15-0.66 | 0.19 | not distinguishable from zero |
+
+So the data supports an image saving only on bandwidth-bound links. On fast links the effect may be small, or the sample
+(median image share only 13% of the bytes) may be too small to see it; the intervals are wide. The API uses the point
+estimates and labels the fast-network savings `basis: "measured-weak"` (Slow 3G is `"measured"`).
+
+**Selection bias on Slow 3G:** 40% of baseline runs but only 26% of `no_images` runs failed (90 s timeouts), and the sites
+that dropped out are much heavier (median 5.7 MB vs 1.2 MB). The Slow 3G slope therefore describes pages that load within
+90 s; for heavy pages the true effect is probably larger but cannot be measured this way.
 
 ## 9. Known issues and suggested next work
 
-1. **Savings shown per method are not tree output.** *Lazy-load images* now uses the measured effect (section 8); the other three methods still use `removed bytes / assumed throughput * 0.6` in `api/main.py` (`ACTIONS`, `THROUGHPUT_BPS`, `basis: "estimate"`). Replace them with measured effects once those variants exist for many sites, collected back to back with the baseline.
+1. **Savings shown per method are not tree output.** *Lazy-load images* uses the measured effect (section 8: solid on Slow 3G, `measured-weak` on fast links); the other three methods still use `removed bytes / assumed throughput * 0.6` in `api/main.py` (`ACTIONS`, `THROUGHPUT_BPS`, `basis: "estimate"`). Replace them with measured effects once those variants exist for many sites, collected with `--paired` and alternating order. The byte-throughput formula was never validated against measurements (the earlier "far too low" comparison used drift-inflated data), so treat those three as unproven.
 2. **Run the other variants and repeats 2-3** across all URLs (`run_tomorrow.bat`), then re-run `train_new.py` / `train_model.py` and refresh the report and `reports/fig_*.png` (the figures and `reports/results.json` still describe the old dataset; `train_all.py` reads the old `new_preprocessed.csv` and needs the same adapter `train_new.py` has).
 3. **Unseen URLs get a median page profile** in the API unless the caller sends `page` bytes. The extension now does (`pageWeight()` in `extension/content.js`, Resource Timing), but Chrome hides the size of cross-origin responses without `Timing-Allow-Origin`, so only 44-93% of the true bytes were disclosed on the 3 pages tried. The API prices hidden requests at the median size of their type; the result was within 3% of the CDP total on 2 pages and 65% too high on theguardian.com (many tiny trackers). Untested inside Chrome itself, only the same code run through Playwright.
 4. **Network profile is guessed from RTT** (`network_profile()` in `api/main.py`: <30 ms = No_Throttle, <200 ms = Fast_4G, else Slow_3G). That is crude.

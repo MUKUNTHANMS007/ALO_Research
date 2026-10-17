@@ -7,7 +7,7 @@ The earlier 71-site report is kept in `reports/ALO_Training_Report_v1_71sites.md
 ## 1. Summary
 
 - **Task:** predict `page_load_time_ms` for a website under a network condition.
-- **Data:** 715 usable runs from **277 websites** (baseline, cold cache, 1x CPU), up from 548 runs / 71 sites.
+- **Data:** 967 usable runs from **279 websites** (baseline, cold cache, 1x CPU; 715 repeat-1 + 252 repeat-2 runs), up from 548 runs / 71 sites. **Update 2026-10-17:** the models and the numbers in this bullet and in the paragraph below were refreshed on this larger set (Extra Trees R² 0.745, mean error 4.4 s, median 1.6 s; single tree 0.698 / 5.0 s; Extra Trees won 13 of 15 paired folds, p = 0.0003). Tables further down that were not repeated still describe the 715-run data from 2026-10-08.
 - **Exported model:** decision tree on total page bytes + network profile. On websites it never saw: **R² 0.72 ± 0.05, mean error 5.2 s (median 1.95 s)**, against 12.1 s for guessing the median.
 - **Best accuracy:** Extra Trees with 11 composition features reaches R² 0.76 (4.7 s). Adding TTFB gives R² 0.80 (4.5 s), but TTFB is measured during the load, so it cannot be an input to a predict-before-loading system.
 - **The old model does not transfer:** trained on the first dataset, it scores R² 0.48 / 7.6 s on the new data. The new pages are much faster and more varied (257 runs under 3 s; the old data had none). The exported model is therefore retrained on the new data. The old one is backed up in `model/v1_old/`.
@@ -67,14 +67,14 @@ Paired against the baseline for the same URL and network (cold cache, 1x CPU):
 | Slow_3G | 219 | -587 ms |
 | No_Throttle | 292 | -396 ms |
 
-Blocking images removes them entirely, so these are upper bounds on what image optimisation could save. **They are also inflated by drift:** the `no_images` run of a URL was taken a median of 71 h after its baseline, and pages with zero image bytes still came out faster (Fast 4G 39%, No_Throttle 8%, Slow 3G 2%). After removing that offset (`train_savings.py`), the image effect is about 0.95 x image byte share of the load time on Slow 3G (90% CI 0.91-0.97), 0.50 on Fast 4G (0.40-0.61) and 0.30 on No_Throttle (0.17-0.46). Collect variants back to back with their baselines to avoid this. The other variants (third-party scripts, fonts, media) were only run on 3 sites and are not enough to conclude anything.
+Blocking images removes them entirely, so these are upper bounds on what image optimisation could save. **They are also inflated by drift:** the `no_images` run of a URL was taken a median of 71 h after its baseline, and pages with zero image bytes still came out faster (Fast 4G 39%, No_Throttle 8%, Slow 3G 2%). Back-to-back re-measurement (2026-10-17, `collect.py --paired`, 253 pairs less than 1 h apart, alternating order) removed the drift: median "saving" fell to 3% (No_Throttle), 10% (Fast 4G) and 3% (Slow 3G). It also exposed an order effect: on the fast networks the run that goes second is 14-19% faster whatever the variant (warm DNS/CDN/server caches); Slow 3G has none. With that modelled (`saving = a + slope x image share + c x order`), the image slope is **0.94 on Slow 3G (90% CI 0.88-0.97, significant)** but **0.02 on Fast 4G (-0.14 to 0.56) and 0.06 on No_Throttle (-0.15 to 0.66), not distinguishable from zero**. Caveat for Slow 3G: 40% of baseline runs but only 26% of `no_images` runs timed out, and the sites lost are much heavier (median 5.7 MB vs 1.2 MB), so that slope describes pages that load within 90 s.
 
 ## 7. Limits
 
 1. One machine, simulated networks, one repeat per combination.
 2. Survivorship: failed loads are dropped, mostly on Slow 3G.
 3. Unseen URLs use a median page profile in the API.
-4. Per-method savings in the dashboard are still the byte-throughput estimate, not model output; only `no_images` has measured data at scale.
+4. Per-method savings in the dashboard are not model output. Images use the measured slopes above (solid on Slow 3G only); the other three methods are still unvalidated byte-throughput estimates.
 5. Some metrics (LCP, TTFB, CPU) are collected but not model inputs.
 
 ## 8. Next steps

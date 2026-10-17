@@ -219,14 +219,17 @@ def predict(body: PredictIn):
     results = []
     for name, detail, cuts, method in ACTIONS:
         removed = sum(int(comp[k] * f) for k, f in cuts.items())
-        slope = CALIB['images'].get(profile, {}).get('slope') if name in MEASURED else None
+        cal = CALIB['images'].get(profile, {}) if name in MEASURED else {}
+        slope = cal.get('slope')
         if slope is not None:
             share = comp[MEASURED[name]] / max(1, comp['total_network_bytes'])
             saved_sec = base / 1000 * slope * share * cuts[MEASURED[name]]
         else:
             saved_sec = removed * 8 / bw * PARALLEL_DISCOUNT
         results.append({'name': name, 'detail': detail, 'method': method, 'removedBytes': removed,
-                        'savedSec': saved_sec, 'basis': 'measured' if slope is not None else 'estimate'})
+                        'savedSec': saved_sec,
+                        # 'measured-weak': measured, but the 90% CI of the effect includes zero on this network
+                        'basis': 'estimate' if slope is None else 'measured' if cal.get('significant', True) else 'measured-weak'})
     results.sort(key=lambda a: -a['savedSec'])
     total_b = max(1, comp['total_network_bytes'])
     live = [a for a in results if a['name'] not in body.disabled]
@@ -244,6 +247,8 @@ def predict(body: PredictIn):
         share = comp[main_key] / total_b
         what = main_key.replace('_bytes', '')
         how = ('based on runs where images were blocked (upper bound scaled to this cut)' if a['basis'] == 'measured'
+               else 'measured by blocking images, but on this network the effect is not distinguishable from zero in '
+                    'the data, so treat the saving as unproven' if a['basis'] == 'measured-weak'
                else f"estimated from bytes at {bw / 1e6:.1f} Mbps")
         a['reason'] = (f"{what.capitalize()} is {comp[main_key] / 1024:,.0f} KB ({share:.0%} of the page). On a "
                        f"{PROFILE_LABEL[profile].lower()} link, {a['method'].lower()} removes about "
@@ -292,7 +297,8 @@ def methods():
             'parallelDiscount': PARALLEL_DISCOUNT,
             'formula': 'images: saved = predicted load x measured slope[network] x image byte share x fraction cut; '
                        'other methods: saved ms = removed KB x 8 / throughput x parallel discount (estimate, no measured data)',
-            'imageSlope': {k: v['slope'] for k, v in CALIB['images'].items()}}
+            'imageSlope': {k: {'slope': v['slope'], 'ci90': v['slope_ci90'], 'significant': v.get('significant')}
+                           for k, v in CALIB['images'].items()}}
 
 
 @app.get('/api/model')
