@@ -51,6 +51,7 @@
             </svg>
             <div class="g-read"><span id="pred-val">--</span><small>seconds</small></div>
           </div>
+          <p class="fine" id="range-note" hidden></p>
           <p class="note" id="note" hidden></p>
           <div class="hero-meta">
             <div><small>Baseline</small><strong id="base-val">--</strong></div>
@@ -195,24 +196,28 @@
     <!-- ================= MODEL ================= -->
     <section class="page" data-page="model" hidden>
       <header class="topbar"><div><h1>Model</h1>
-        <p class="sub">The decision tree behind the predictions, and how far to trust it</p></div></header>
+        <p class="sub">The models behind the predictions, and how far to trust them</p></div></header>
       <p class="note" id="m-note" hidden></p>
       <section class="stats" id="m-stats"></section>
       <section class="grid">
         <article class="card half"><div class="card-head"><h2>Model comparison</h2><span class="chip">unseen sites</span></div>
           <div id="m-comp" class="bars"></div>
           <p class="fine">Mean error in seconds (lower is better). Each model is tested on websites it never saw during training.</p></article>
-        <article class="card half"><div class="card-head"><h2>What the tree relies on</h2></div>
-          <div id="m-imp" class="bars"></div></article>
+        <article class="card half"><div class="card-head"><h2>What the model relies on</h2></div>
+          <div id="m-imp" class="bars"></div>
+          <p class="fine" id="m-imp-note"></p></article>
+        <article class="card full"><div class="card-head"><h2>How far to trust a prediction</h2><span class="chip">80% range</span></div>
+          <div id="m-trust" class="bars"></div>
+          <p class="fine" id="m-trust-note"></p></article>
         <article class="card full"><div class="card-head"><h2>Tree rules (top levels)</h2><span class="chip">leaf value = log of load time in ms</span></div>
           <pre id="m-rules" class="rules"></pre></article>
         <article class="card full"><div class="card-head"><h2>Known limits</h2></div>
           <ul class="limits">
-            <li>Trained on about 70 websites collected on one day; it generalises only roughly to other sites.</li>
-            <li>For a URL it has not seen, the page is assumed to be the median site.</li>
-            <li>The network profile is one of three trained conditions, derived from measured latency.</li>
-            <li>Per-method savings are physics-based estimates, not model output or measurements.</li>
-            <li>Device load (CPU, memory, battery) is not yet a model input.</li>
+            <li>Trained on page loads from one machine under three simulated networks; it generalises only roughly to other sites and real networks (see the counts above).</li>
+            <li>For a URL it has not seen, the page is assumed to be the median site unless the extension reports the real page bytes.</li>
+            <li>The network profile is one of three trained conditions, guessed from measured latency, which is crude.</li>
+            <li>Only the image saving on slow links is measured; the other per-method savings are unvalidated byte-throughput estimates, not model output.</li>
+            <li>Device load (CPU, memory, battery) is not a model input.</li>
           </ul></article>
       </section>
     </section>

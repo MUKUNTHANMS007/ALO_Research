@@ -98,6 +98,13 @@ function renderPrediction(p) {
   fill.style.strokeDashoffset = len * (1 - frac);
   fill.style.stroke = p.optimized < 3 ? '#16a34a' : p.optimized < 6 ? '#d97706' : '#dc2626';
   $('pred-val').textContent = p.optimized.toFixed(1);
+  const rg = p.range && p.range.optimized;   // 80% range from held-out errors (absent in mock mode / older API)
+  $('range-note').hidden = !rg;
+  if (rg) {
+    const fmt = v => v < 10 ? v.toFixed(1) : v.toFixed(0);
+    $('range-note').textContent = `Likely between ${fmt(rg[0])} and ${fmt(rg[1])} s ` +
+      `(about ${Math.round(p.range.level * 100)}% of unseen pages fell inside a range like this).`;
+  }
   $('base-val').textContent = p.baseline.toFixed(1) + ' s';
   $('opt-val').textContent = p.optimized.toFixed(1) + ' s';
   $('save-val').textContent = `${((p.saved / p.baseline) * 100).toFixed(1)}%`;
@@ -321,7 +328,21 @@ async function loadModel() {
     : '<p class="fine">Run train_v2.py to generate the comparison.</p>';
   const maxI = Math.max(0.0001, ...m.importance.map(i => i.value));
   $('m-imp').innerHTML = m.importance.map(i =>
-    `<div class="bar-row wide-label"><span>${esc(i.feature)}</span><div class="bar"><i style="width:${(i.value / maxI * 100).toFixed(0)}%"></i></div><em>${(i.value * 100).toFixed(0)}%</em></div>`).join('');
+    `<div class="bar-row wide-label"><span>${esc(i.feature)}</span><div class="bar"><i style="width:${(i.value / maxI * 100).toFixed(0)}%"></i></div><em>${i.value.toFixed(2)}</em></div>`).join('');
+  $('m-imp-note').textContent = (m.importance_kind || '') + '. Higher = the model depends on it more.';
+  const iv = m.interval, NAMES = { Slow_3G: 'Slow 3G', Fast_4G: 'Fast 4G', No_Throttle: 'No throttle' };
+  $('m-trust').innerHTML = iv ? Object.entries(iv.table).map(([net, rows]) => {
+    // multiplier of the predicted time between which the real time fell 80% of the time (middle speed bucket as the example)
+    const [lo, hi] = rows[1].map(v => Math.exp(v));
+    const cov = iv.coverage_crossfit[net];
+    return `<div class="bar-row wide-label"><span>${NAMES[net] || net} · ×${lo.toFixed(2)}–×${hi.toFixed(2)}</span>` +
+      `<div class="bar"><i style="width:${(cov * 100).toFixed(0)}%"></i></div><em>${(cov * 100).toFixed(0)}%</em></div>`;
+  }).join('') : '<p class="fine">Prediction ranges need a retrained model (python train_model.py).</p>';
+  const ex = iv && (() => { const [a, b] = iv.table.Fast_4G[1], z = Math.log1p(4000); return [Math.expm1(z + a) / 1000, Math.expm1(z + b) / 1000]; })();
+  $('m-trust-note').textContent = iv ? 'Bars show how often the real load time fell inside the range on websites the model never saw ' +
+    '(target 80%). The multipliers are the range around a prediction of 3-8 s; faster and slower predictions use their own bands on Slow 3G and Fast 4G. ' +
+    `Example: a 4 s prediction on Fast 4G means "probably between about ${ex[0].toFixed(1)} and ${ex[1].toFixed(1)} s". ` +
+    'Pages predicted at 8 s or more on an unthrottled link are the weakest case.' : '';
   $('m-rules').textContent = m.rules;
 }
 

@@ -68,11 +68,7 @@
       if (e.transferSize > 0) bytes[t] = (bytes[t] || 0) + e.transferSize;
       else if (e.encodedBodySize === 0 && e.deliveryType !== 'cache') unknown[t] = (unknown[t] || 0) + 1;
     }
-    // Chrome's "Nodes" counter (what the collector recorded) counts every DOM node, text nodes included.
-    let nodes = 0;
-    const it = document.createNodeIterator(document, NodeFilter.SHOW_ALL);
-    while (it.nextNode()) nodes++;
-    return { bytes, unknown, requests: res.length + 1, dom_nodes: nodes };
+    return { bytes, unknown, requests: res.length + 1 };
   }
 
   addEventListener('load', () => setTimeout(() => {

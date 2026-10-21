@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from train_model import FEATURES, to_frame, to_frame_full
+from train_model import FEATURES, apply_band, to_frame, to_frame_full
 
 ROOT = Path(__file__).resolve().parent.parent
 bundle = joblib.load(ROOT / 'model' / 'alo_tree.joblib')   # single tree: readable rules ("how it decided")
@@ -98,7 +98,6 @@ class PageIn(BaseModel):
     bytes: dict[str, int] = {}    # resource type (document, script, ...) -> transferred bytes that the browser disclosed
     unknown: dict[str, int] = {}  # resource type -> number of requests whose size the browser hides (cross-origin)
     requests: int | None = None
-    dom_nodes: int | None = None
 
 
 class PredictIn(BaseModel):
@@ -128,6 +127,25 @@ ACTIONS = [
     ('Compress / defer media', 'Serve smaller video and poster', {'media_bytes': 0.6}, 'Compression'),
     ('Limit web fonts', 'Subset fonts, preload key ones', {'font_bytes': 0.5}, 'Subsetting'),
 ]
+
+
+INTERVAL = PREDICTOR['metrics'].get('interval')  # prediction range calibrated on held-out errors (train_model.py)
+
+
+def _range(ms, profile):
+    """[low_s, high_s] that contained the actual load time ~80% of the time on held-out websites, or None."""
+    if not INTERVAL:
+        return None
+    lo, hi = apply_band(INTERVAL['table'], ms, profile)
+    return [lo / 1000, hi / 1000]
+
+
+def _ranges(baseline_s, optimized_s, profile):
+    if not INTERVAL:
+        return None
+    return {'baseline': _range(baseline_s * 1000, profile), 'optimized': _range(optimized_s * 1000, profile),
+            'level': INTERVAL['level'], 'coverage': INTERVAL['coverage_crossfit'].get(profile),
+            'note': 'Range of the prediction only; it does not include uncertainty in the savings.'}
 
 
 def _predict_ms(comp, profile):
@@ -178,8 +196,6 @@ def composition_from_page(page: PageIn):
     comp['total_network_bytes'] = total
     if page.requests:
         comp['request_count'] = page.requests
-    if page.dom_nodes:
-        comp['dom_node_count'] = page.dom_nodes
     return comp
 
 
@@ -265,11 +281,13 @@ def predict(body: PredictIn):
     split = {'Script': 'script_bytes', 'Image': 'image_bytes', 'Font': 'font_bytes', 'Stylesheet': 'stylesheet_bytes',
              'Document': 'document_bytes', 'Media': 'media_bytes', 'Other': 'other_bytes'}
     return {'url': url, 'baseline': base / 1000, 'optimized': optimized / 1000, 'saved': (base - optimized) / 1000,
+            'profile': profile, 'range': _ranges(base / 1000, optimized / 1000, profile),
             'actions': results, 'warning': warning, 'path': explain_path(comp, profile), 'network': PROFILE_LABEL[profile], 'actual': None,
             'bytes': [{'type': t, 'bytes': comp[k]} for t, k in split.items()],
             'source': 'browser' if from_browser else 'dataset' if known else 'global-median',
             'path_note': 'Simplified view: a single decision tree on page size and network. The prediction itself comes '
-                         'from an average of 300 trees that also use the resource-type breakdown.' if et_bundle else None,
+                         'from an average of 300 trees that also use script bytes, image bytes and the request count.'
+            if et_bundle else None,
             'model': {'r2_log': PREDICTOR['metrics']['r2_log'], 'mae_ms': PREDICTOR['metrics']['mae_ms']}}
 
 
@@ -307,15 +325,21 @@ def model_info():
     from sklearn.tree import export_text
     cols = bundle['columns']
     pcols = PREDICTOR['columns']  # importance is reported for the model that predicts
-    imp = sorted(zip(pcols, PREDICTOR['model'].feature_importances_), key=lambda x: -x[1])[:8]
+    imp = PREDICTOR['metrics'].get('importance')  # permutation importance on held-out websites (train_model.py)
+    if imp is None:  # older model files: impurity importance, which over-rates features with many distinct values
+        imp = [{'feature': f, 'value': float(v)} for f, v in zip(pcols, PREDICTOR['model'].feature_importances_)]
+    imp = sorted(imp, key=lambda r: -r['value'])[:8]
     comp = PREDICTOR['metrics'].get('comparison', [])
     p = ROOT / 'reports' / 'results.json'
     if not comp and p.exists():  # old 71-site study; only used when the current comparison is missing
         res = json.load(open(p, encoding='utf-8'))['comparison']
         comp = [{'model': k, 'mae_ms': v['mae'][0], 'r2': v['r2'][0]} for k, v in res.items()]
     return {'metrics': PREDICTOR['metrics'], 'comparison': comp,
-            'importance': [{'feature': f.replace('network_profile_', 'network: ').replace('_', ' '), 'value': float(v)}
-                           for f, v in imp if v > 0],
+            'importance': [{'feature': r['feature'].replace('network_profile_', 'network: ').replace('_', ' '),
+                            'value': float(r['value'])} for r in imp if r['value'] > 0],
+            'importance_kind': 'drop in accuracy (R2) on unseen websites when the input is shuffled'
+            if PREDICTOR['metrics'].get('importance') else 'impurity importance',
+            'interval': INTERVAL,
             'rules': export_text(MODEL, feature_names=cols, max_depth=4),
             'features': [c for c in pcols if not c.startswith('network_profile_')] + ['network profile']}
 
@@ -375,6 +399,7 @@ def report(body: ReportIn):
         # The observed bytes are those of the optimized load, so the model's prediction on them is the "optimized"
         # figure (directly comparable to the measured time); baseline = that plus the applied methods' savings.
         p['optimized'], p['baseline'] = p['baseline'], p['baseline'] + p['saved']
+        p['range'] = _ranges(p['baseline'], p['optimized'], p['profile'])
     _live_seq[0] += 1
     run = {**p, 'id': f'live{int(time.time())}-{_live_seq[0]}', 'time': time.strftime('%m/%d/%Y, %I:%M:%S %p'),
            'actual': body.load_ms / 1000, 'live': True, 'applied_stats': body.stats}

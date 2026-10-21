@@ -2,7 +2,7 @@
 
 Self-contained summary for someone (or an LLM session) with no prior context. `README.md` has the full operating
 notes and `ALO_Training_Report.md` the detailed results; read this file first, then those.
-Written 2026-10-15, updated 2026-10-17 after the back-to-back collection finished and the models were retrained.
+Written 2026-10-15, updated 2026-10-21 (4-feature predictor, prediction ranges, permutation importance; earlier update 2026-10-17: back-to-back collection finished, models retrained).
 
 ## 1. What the project is for
 
@@ -23,7 +23,7 @@ It is a working prototype by one person on one Windows machine (Python 3.12, git
 | API + dashboard | `api/main.py` (FastAPI: `python -m uvicorn api.main:app --port 8000`), `ui/` (static dashboard served at `/`) |
 | Browser extension | `extension/` (Chrome MV3: `content.js`, `background.js`, `defer_main.js`, `popup.*`) |
 | OS agent | `agent/telemetry.py`, `agent/tray.py`, `agent/alo_agent.pyw`, `demo.py` |
-| Models | `model/alo_et.joblib` (Extra Trees **predictor**), `model/alo_tree.joblib` (single tree, rule view only), `model/url_profiles.json` (page composition for 279 URLs), `model/savings_calibration.json`; backups in `model/v1_old/`, `model/v2_backup/` |
+| Models | `model/alo_et.joblib` (Extra Trees **predictor** on 4 page features + network; also holds the prediction-range table and permutation importance), `model/alo_tree.joblib` (single tree, rule view only), `model/url_profiles.json` (page composition for 279 URLs), `model/savings_calibration.json`; backups in `model/v1_old/`, `model/v2_backup/` |
 
 Data: `collected/runs.csv` (current; collector output), `collected/failed.csv`, `new_preprocessed.csv` (older 71-89 URL
 dataset, now only used to fill in page profiles).
@@ -31,8 +31,8 @@ dataset, now only used to fill in page profiles).
 ## 3. How the algorithm works
 
 1. **Collect.** For each URL x network the collector loads the page and records load time, bytes per type (document,
-   script, stylesheet, image, font, xhr_fetch, media, other), request count and DOM node count.
-2. **Train.** Target = `log1p(page_load_time_ms)` (load times span 0.3-90 s). Inputs = 11 page-composition features +
+   script, stylesheet, image, font, xhr_fetch, media, other), request count (the model uses only total, script and image bytes plus request count).
+2. **Train.** Target = `log1p(page_load_time_ms)` (load times span 0.3-90 s). Inputs = 4 page features (total bytes, script bytes, request count, image bytes) +
    one-hot network profile. Evaluation = cross-validation **grouped by website** (5 folds x 3 repeats); a random split
    leaks because each site appears several times. Never use outcome columns (TTFB, request durations, task times) as
    inputs: that is leakage.
@@ -52,15 +52,17 @@ dataset, now only used to fill in page profiles).
 |---|---|---|---|
 | Guess the median | n/a | ~12 s | n/a |
 | Single tree, bytes + network (rule view only) | 0.698 | 5.0 s | 1.9 s |
-| **Extra Trees, 11 features (current predictor)** | **0.745** | **4.4 s** | **1.6 s** |
+| **Extra Trees, 4 features (current predictor)** | **0.748** | **4.5 s** | **1.6 s** |
 
-- Extra Trees beat the tree in 13/15 paired folds (mean R2 gain +0.047, Wilcoxon p = 0.0003). Its `min_samples_leaf=2` was picked
+- Extra Trees beat the tree in 15/15 paired folds (mean R2 gain +0.050, Wilcoxon p = 0.0001). The 7 other composition features (documents, stylesheets, fonts, XHR, media, other bytes, DOM nodes) were dropped: no change on unseen sites (dR2 +0.003, p = 0.93); script and image bytes are needed. Its `min_samples_leaf=2` was picked
   from {2, 4, 8} on an earlier CV of the same data, so the score is slightly optimistic.
 - Before the 252 repeat-2 runs were added (715 runs / 277 sites) the same models scored 0.769 / 4.3 s and 0.717 / 5.2 s. The method is
   unchanged; why the new runs are harder to predict was not investigated.
-- By network (tree -> Extra Trees, R2 / mean error): Slow 3G 0.91/4.0 s -> 0.92/3.1 s; Fast 4G 0.57/6.7 s -> 0.64/6.1 s;
+- By network (tree -> Extra Trees, R2 / mean error): Slow 3G 0.91/4.0 s -> 0.92/3.3 s; Fast 4G 0.57/6.7 s -> 0.64/6.1 s;
   No_Throttle 0.44/3.9 s -> 0.53/3.6 s.
 - Fast 4G is still the weakest: on the 715-run data its slowest 10% of loads (often 3-9 MB pages taking 50-90 s) averaged a 33 s error. Cause not found.
+- **Prediction range (new).** `/api/predict` and `/api/report` return `range` (low-high seconds, baseline and optimized) and the dashboard shows it. The ensemble's tree-vote interval was overconfident (nominal 80% covered 67% of held-out pages), so the range is calibrated on held-out errors per network and predicted-speed bucket. Cross-fitted coverage 77.8% overall (Fast 4G 78%, No_Throttle 79%, Slow 3G 75%). Weakest: predictions >= 8 s on No_Throttle. Covers the prediction only, not the savings.
+- **Importance (permutation on held-out sites, drop in R2):** network 0.98, total bytes 0.23, script bytes 0.14, request count 0.11, image bytes 0.05.
 - Fast pages are over-predicted, slow ones under-predicted. Slow 3G predictions flatten near 83 s (90 s timeout). Failed loads
   were dropped, so the slowest pages are under-represented.
 
@@ -94,7 +96,7 @@ dataset, now only used to fill in page profiles).
 - New `train_savings.py` -> `model/savings_calibration.json` (image effect per network from adjacent baseline/`no_images` pairs, with the
   run-order term; median bytes per request by type). The API labels each action `basis: "measured"` (Slow 3G), `"measured-weak"`
   (images on fast links, effect not distinguishable from zero) or `"estimate"` (everything else).
-- `train_model.py` also exports `alo_et.joblib`; the API predicts with Extra Trees (falls back to the tree if missing) and keeps the
+- `train_model.py` also exports `alo_et.joblib` (4 page features, range table, permutation importance; the extension no longer counts DOM nodes); the API predicts with Extra Trees (falls back to the tree if missing) and keeps the
   tree for the readable "decision path", labelled as a simplified view. The model page shows the current tree vs Extra Trees comparison.
 - `collect.py --paired`: runs a URL's variants consecutively, alternating order, so drift cancels (`plan()`).
 - README, `ALO_Training_Report.md`, `run_tomorrow.bat` updated.
