@@ -109,8 +109,7 @@ The retrained models, the final calibration and the full dataset (`collected/run
 
 ## 7. Open items
 
-1. **Test the extension in real Chrome.** It has never been run in a live session. Restart the API, reload the extension in
-   `chrome://extensions`, browse some sites, check the badge and the Live runs page.
+1. **Extension:** mechanics verified in Playwright Chromium on 2026-10-21 (injection, lazy-loading, page-weight report to the API, live runs list; 4 of 5 real loads inside the 80% range). **Not shown:** that it makes pages faster (the with/without A/B was too noisy: 6/30 timeouts, up to 10x spread within one condition, paired ratio geometric mean 1.01, n = 10), and it has not been tried in a user's desktop Chrome (`chrome://extensions` -> Load unpacked -> `extension/`). On the test day the real connection (latency ~90 ms with jitter) was far worse than any training day (median 27-31 ms), which produced one big miss (GitHub 5.1 s predicted vs 24.8 s). Reported page weight vs Chrome's true bytes: GitHub 99%, Wikipedia 94%, BBC 65%, The Guardian 27%.
 2. **Measure the other methods** (script deferral, fonts, media): only ~3 sites of data; still unvalidated byte-throughput estimates.
    Use `collect.py --paired` with alternating order (the order effect matters on fast links).
 3. **Images on fast links:** is the effect truly ~0 or just too small to detect (median image share is only 13% of bytes)? More pairs,
